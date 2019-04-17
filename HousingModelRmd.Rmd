@@ -1,0 +1,348 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+### Part 6: Cross Validation
+# Compute Predicted Price for Model from parts 1/2
+
+```{r}
+firstmodtestdata = lm(Price~LotArea+YearBuilt+BasementSF+FullBath+TotalRooms+GarageCars+WoodDeckSF, data=AmesTest6)
+summary(firstmodtestdata)
+predict(firstmodtestdata, data.frame(AmesTest6), level = .95, interval = "predict")
+```
+
+# Compute the residuals for the 200 holdout cases
+```{r}
+rstandard(firstmodtestdata)
+rstudent(firstmodtestdata)
+```
+# Compute the mean and standard deviation of these residuals. Are they close to what you expect from the training model?
+```{r}
+plot(firstmodtestdata$residuals~firstmodtestdata$fitted.values)
+abline(a=0, b=0)
+
+mean(firstmodtestdata$residuals)
+sd(firstmodtestdata$residuals)
+
+firstmodtraindata = lm(Price~LotArea+YearBuilt+BasementSF+FullBath+TotalRooms+GarageCars+WoodDeckSF, data=AmesTrain6a)
+mean(firstmodtraindata$residuals)
+sd(firstmodtraindata$residuals)
+```
+The mean residuals of our simplest model using the test data are very similar to the mean residuals we had with the training data. This is a good sign that our model was not overfitted. Additionally, the standard deviations were similar, which was expected. 
+
+# Are any holdout cases especially poorly predicted by the training model? If so, identify by the row number(s) in the holdout data. 
+```{r}
+which.max(rstandard(firstmodtestdata))
+max(rstandard(firstmodtestdata))
+which.max(rstudent(firstmodtestdata))
+max(rstudent(firstmodtestdata))
+which.min(rstandard(firstmodtestdata))
+min(rstandard(firstmodtestdata))
+which.min(rstudent(firstmodtestdata))
+min(rstudent(firstmodtestdata))
+```
+Although some of these outliers are over the threshold for concern for rstudent and rstandard residuals, they are not substantially different from the outliers we had in our first model. This means that overfitting is likely not the cause of the outliers of concern. Finally, the outliers don't change substantially between rstandard and rstudent, meaning that their removal from the data set doesn't significantly alter our model. 
+
+# Compute the correlation between the predicted values above and actual prices for the holdout sample. 
+```{r}
+summary(firstmodtraindata)
+fitAmes=predict(firstmodtraindata, newdata=AmesTest6)
+holoutresid=(AmesTest6$Price)-fitAmes
+mean(holdoutresid)
+cor(AmesTest6$Price, fitAmes)
+crosscorr=cor(AmesTest6$Price, fitAmes)
+crosscorr^2
+0.6795-crosscorr^2
+```
+Our shrinkage is 0.05727804, which indicates that our model fits our test data almost as well as it fitr our training data. This means that we did not overfit our model (which makes sense, because this was the most basic model that we used). 
+
+
+### Part 7: A Fancy Model
+# Categorical variables from the original dataset
+```{r}
+modTransformCat=lm(Price~factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(HeatingQC)+factor(KitchenQ)+factor(ExteriorC)+factor(CentralAir)+factor(GarageQ)+factor(Foundation)+factor(GarageC)+factor(BasementHt)+factor(GarageType)+factor(LotConfig)+factor(BasementC)+factor(Heating)+factor(Condition), data=AmesTrain6a)
+summary(modTransformCat)
+MSE=(summary(modTransformCat)$sigma)^2
+step(none,scope=list(upper=modTransformCat),scale=MSE)
+```
+```{r}
+modCatTransformForward=lm(Price~factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(HeatingQC)+factor(KitchenQ)+factor(ExteriorC)+factor(CentralAir)+factor(GarageQ)+factor(Foundation)+factor(GarageC)+factor(BasementHt)+factor(GarageType)+factor(LotConfig)+factor(BasementC)+factor(Heating)+factor(Condition), data=AmesTrain6a)
+MSE=(summary(modCatTransformForward)$sigma)^2
+none=lm(Price~1,data=AmesTrain6a)
+step(none,scope=list(upper=modCatTransformForward),scale=MSE, direction = "forward")
+```
+
+```{r}
+modTransformCatBackward=lm(Price~factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(HeatingQC)+factor(KitchenQ)+factor(ExteriorC)+factor(CentralAir)+factor(GarageQ)+factor(Foundation)+factor(GarageC)+factor(BasementHt)+factor(GarageType)+factor(LotConfig)+factor(BasementC)+factor(Heating)+factor(Condition), data=AmesTrain6a)
+MSE=(summary(modTransformCatBackward)$sigma)^2
+step(modTransformCatBackward,scale=MSE)
+```
+```{r}
+modCatReduced = lm (Price ~ factor(ExteriorQ) + factor(BasementHt) + 
+    factor(GarageType) + factor(KitchenQ) + factor(HouseStyle) + 
+    factor(LotConfig) + factor(Condition), data = AmesTrain6a)
+
+modCatFull=lm(Price~factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(HeatingQC)+factor(KitchenQ)+factor(ExteriorC)+factor(CentralAir)+factor(GarageQ)+factor(Foundation)+factor(GarageC)+factor(BasementHt)+factor(GarageType)+factor(LotConfig)+factor(BasementC)+factor(Heating)+factor(Condition), data=AmesTrain6a)
+
+Cp455(modCatReduced, modCatFull)
+```
+After doing forward, backward, and stepwise regression, we're going to use the categorical models that forward and stepwise gave us because of the low AIC and Mallow Cp values. The AIC for forward and stepwise was 36.37 and the AIC for backward selection was 36.25. Although the backward selection AIC was slightly lower, we chose to use the factors suggested by forward and stepwise selection because they agreed, and also because we may do a second round of selection when we combine these variables with the numerical variables. This means that we will include  ExteriorQ, BasementHt, GarageType, KitchenQ, HouseStyle, LotConfig, and Condition in the next model. Additionally, the CP for the model suggested by stepwise selection is 36.369, which is substantially more than the number of variables in the model, which means the model isn't very efficient. With that said, this CP is about the same between forward, backward, and stepwise selection, and may improve when we include numerical variables. Furthermore, a higher CP makes sense for when this many variables are introduced into a model. 
+
+# Transformations of predictors.
+We chose these predictors to transform based on the stepwise, backward, and forward selection that we did for Assignment #3
+```{r}
+modLotArea=lm(Price~LotArea, data=AmesTrain6a)
+modLotAreaSquared=lm(Price~LotArea+I(LotArea^2), data=AmesTrain6a)
+modLotAreaSqrt=lm(Price~LotArea+I(sqrt(LotArea)), data=AmesTrain6a)
+modLotAreaLog=lm(Price~(log(LotArea)), data=AmesTrain6a)
+modLotAreaAll=lm(Price~LotArea+I(LotArea^2)+I(sqrt(LotArea))+I(log(LotArea)), data=AmesTrain6a)
+anova(modLotArea, modLotAreaSquared, modLotAreaSqrt, modLotAreaLog, modLotAreaAll)
+
+plot(modLotArea$residuals~modLotArea$fitted.values)
+abline(0,0)
+plot(modLotAreaSquared$residuals~modLotAreaSquared$fitted.values)
+abline(0,0)
+```
+This data shows that we should use LotArea^2 as our transformation because it has the best balance between the number of variables used and a significant p-value. 
+
+```{r}
+modYearBuilt=lm(Price~YearBuilt, data=AmesTrain6a)
+modYearBuiltSquared=lm(Price~YearBuilt+I(YearBuilt^2), data=AmesTrain6a)
+modYearBuiltSqrt=lm(Price~YearBuilt+I(sqrt(YearBuilt)), data=AmesTrain6a)
+modYearBuiltLog=lm(Price~(log(YearBuilt)), data=AmesTrain6a)
+modYearBuiltFull=lm(Price)~YearBuilt+I(YearBuilt^2)+I(sqrt(YearBuilt))+I(log(YearBuilt), data=AmesTrain6a)
+anova(modYearBuilt, modYearBuiltSquared, modYearBuiltSqrt, modYearBuiltLog, modYearBuiltFull)
+
+plot(modYearBuilt$residuals~modYearBuilt$fitted.values)
+abline(0,0)
+plot(modYearBuiltSquared$residuals~modYearBuiltSquared$fitted.values)
+abline(0,0)
+```
+This shows that we should use YearBuilt^2 as our transformation because it has the best balance between the number of variables used and a significant p-value. 
+```{r}
+modWoodDeckSF=lm(Price~WoodDeckSF, data=AmesTrain6a)
+modWoodDeckSFSquared=lm(Price~WoodDeckSF+I(WoodDeckSF^2), data=AmesTrain6a)
+modWoodDeckSFSqrt=lm(Price~WoodDeckSF+I(sqrt(WoodDeckSF)), data=AmesTrain6a)
+modWoodDeckSFLog=lm(Price~(log(WoodDeckSF+1)), data=AmesTrain6a)
+modWoodDeckSFFull=lm(Price)~WoodDeckSF+I(WoodDeckSF^2)+I(sqrt(WoodDeckSF))+I(log(WoodDeckSF+1), data=AmesTrain6a)
+anova(modWoodDeckSF, modWoodDeckSFSquared, modWoodDeckSFSqrt, modWoodDeckSFLog, modWoodDeckSFFull)
+
+plot(modWoodDeckSF$residuals~modWoodDeckSF$fitted.values)
+abline(0,0)
+plot(modWoodDeckSFSquared$residuals~modWoodDeckSFSquared$fitted.values)
+abline(0,0)
+```
+This shows that we should use WoodDeck^2 as our transformation because it has the best balance between the number of variables used and a significant p-value. 
+```{r}
+modGroundSF=lm(Price~GroundSF, data=AmesTrain6a)
+modGroundSFSquared=lm(Price~GroundSF+I(GroundSF^2), data=AmesTrain6a)
+modGroundSFSqrt=lm(Price~GroundSF+I(sqrt(GroundSF)), data=AmesTrain6a)
+modGroundSFLog=lm(Price~(log(GroundSF+1)), data=AmesTrain6a)
+modGroundSFFull=lm(Price)~GroundSFF+I(GroundSF^2)+I(sqrt(GroundSF))+I(log(GroundSF+1), data=AmesTrain6a)
+anova(modGroundSF, modGroundSFSquared, modGroundSFSqrt, modGroundSFLog, modGroundSFFull)
+
+plot(modGroundSF$residuals~modGroundSF$fitted.values)
+abline(0,0)
+plot(modGroundSFSquared$residuals~modGroundSFSquared$fitted.values)
+abline(0,0)
+```
+We're keeping GroundSF as our transformation because it has the best balance between the number of variables used and a significant p-value.
+```{r}
+modFullBath = lm(Price~FullBath, data = AmesTrain6a)
+modFullBathSquared= lm(Price ~ FullBath+I(FullBath^2), data = AmesTrain6a)
+modFullBathSqrt= lm(Price~FullBath+I(sqrt(FullBath)), data=AmesTrain6a)
+modFullBathLog= lm(Price~(log(FullBath+1)), data=AmesTrain6a)
+modFullBathFull = lm(Price~FullBath+I(FullBath^2)+I(sqrt(FullBath))+I(log(FullBath+1)), data=AmesTrain6a)
+anova(modFullBath, modFullBathSquared, modFullBathSqrt, modFullBathLog, modFullBathFull)
+
+plot(modFullBath$residuals~modFullBath$fitted.values)
+abline(0,0)
+plot(modFullBathSquared$residuals~modFullBathSquared$fitted.values)
+abline(0,0)
+```
+This shows that we should use FullBath^2 as our transformation because it has the best balance between the number of variables used and a significant p-value.
+```{r}
+modTotalRooms = lm(Price ~ TotalRooms, data = AmesTrain6a)
+modTotalRoomsSquared = lm(Price ~ TotalRooms+I(TotalRooms^2), data = AmesTrain6a)
+modTotalRoomsSqrt = lm(Price~TotalRooms+I(sqrt(TotalRooms)), data=AmesTrain6a)
+modTotalRoomsLog = lm(Price~(log(TotalRooms+1)), data=AmesTrain6a)
+modTotalRoomsFull = lm(Price~TotalRooms+I(TotalRooms^2)+I(sqrt(TotalRooms))+I(log(TotalRooms+1)), data=AmesTrain6a)
+anova(modTotalRooms, modTotalRoomsSquared, modTotalRoomsSqrt, modTotalRoomsLog, modTotalRoomsFull)
+
+plot(modTotalRooms$residuals~modTotalRooms$fitted.values)
+abline(0,0)
+plot(modTotalRoomsSquared$residuals~modTotalRoomsSquared$fitted.values)
+abline(0,0)
+```
+This shows that we should use TotalRooms + I(TotalRooms^2) + I(sqrt(TotalRooms)) + 
+    I(log(TotalRooms + 1)) as our transformation because it is the only one with a signficant p-value. We may not include this variable in a final model because of how many variables it creates and relies on.
+```{r}
+modBasementSF=lm(Price~BasementSF, data=AmesTrain6a)
+modBasementSFSquared=lm(Price~BasementSF+I(BasementSF^2), data=AmesTrain6a)
+modBasementSFSqrt=lm(Price~BasementSF+I(sqrt(BasementSF)), data=AmesTrain6a)
+modBasementSFLog=lm(Price~(log(BasementSF+1)), data=AmesTrain6a)
+modBasementSFFull=lm(Price~BasementSF+I(BasementSF^2)+I(sqrt(BasementSF))+I(log(BasementSF+1)), data=AmesTrain6a)
+anova(modBasementSF, modBasementSFSquared, modBasementSFSqrt, modBasementSFLog, modBasementSFFull)
+
+plot(modBasementSF$residuals~modBasementSF$fitted.values)
+abline(0,0)
+plot(modBasementSFSquared$residuals~modBasementSFSquared$fitted.values)
+abline(0,0)
+```
+This shows that we should use log(BasementSF) as our transformation because it has the best balance between the number of variables used and a significant p-value.
+```{r}
+modGarageCars=lm(Price~GarageCars, data=AmesTrain6a)
+modGarageCarsSquared=lm(Price~GarageCars+I(GarageCars^2), data=AmesTrain6a)
+modGarageCarsSqrt=lm(Price~GarageCars+I(sqrt(GarageCars)), data=AmesTrain6a)
+modGarageCarsLog=lm(Price~(log(GarageCars+1)), data=AmesTrain6a)
+modGarageCarsFull=lm(Price~GarageCars+I(GarageCars^2)+I(sqrt(GarageCars))+I(log(GarageCars+1)), data=AmesTrain6a)
+anova(modGarageCars, modGarageCarsSquared, modGarageCarsSqrt, modGarageCarsLog, modGarageCarsFull)
+
+plot(modGarageCars$residuals~modGarageCars$fitted.values)
+abline(0,0)
+plot(modGarageCarsSquared$residuals~modGarageCarsSquared$fitted.values)
+abline(0,0)
+
+```
+This shows that we should use modGarageCars^2 as our transformation because it has the best balance between the number of variables used and a significant p-value.
+
+#Transformations of the Response
+```{r}
+modTransformNumericLog=lm(log(Price)~LotArea+I(LotArea^2)+YearBuilt+I(YearBuilt^2)+BasementSF+I(BasementSF^2)+GarageCars+I(GarageCars^2)+WoodDeckSF+I(WoodDeckSF^2)+GroundSF+I(GroundSF^2)+FullBath+TotalRooms, data=AmesTrain6a)
+summary(modTransformNumericLog)
+modTransformNumeric=lm(Price~LotArea+I(LotArea^2)+YearBuilt+I(YearBuilt^2)+BasementSF+I(BasementSF^2)+GarageCars+I(GarageCars^2)+WoodDeckSF+I(WoodDeckSF^2)+GroundSF+I(GroundSF^2)+FullBath+TotalRooms, data=AmesTrain6a)
+summary(modTransformNumeric)
+modTransformCatLog=lm(log(Price)~factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(HeatingQC)+factor(KitchenQ)+factor(ExteriorC)+factor(CentralAir)+factor(GarageQ)+factor(Foundation)+factor(GarageC)+factor(BasementHt)+factor(GarageType)+factor(LotConfig)+factor(BasementC)+factor(Heating)+factor(Condition), data=AmesTrain6a)
+summary(modTransformCatLog)
+modTransformCat=lm(Price~factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(HeatingQC)+factor(KitchenQ)+factor(ExteriorC)+factor(CentralAir)+factor(GarageQ)+factor(Foundation)+factor(GarageC)+factor(BasementHt)+factor(GarageType)+factor(LotConfig)+factor(BasementC)+factor(Heating)+factor(Condition), data=AmesTrain6a)
+summary(modTransformCat)
+```
+We decided not to log the response because the results of the logged Price were not significantly different. Although the adjusted r-squared was slightly better (.001) for log(Price) than Price with numeric variables, Price was significantly better than log(Price) for Categorical variables (.02). Additionally, we didn't want to overfit the data through too many transformations, so we chose to keep Price as the response variable. 
+
+#Combinations of Variables
+
+```{r}
+modAllBathroom=lm(Price~FullBath+BasementFBath+0.5*BasementHBath+0.5*HalfBath, data-AmesTrain6a)
+summary(modAllBathroom)
+```
+We chose not to combine any of the variables because they didn't significantly improve the model. For example, experimental combinations with the different bath variables didn't improve the adjusted r-squared value while also lowering AIC and Mallow Cp. 
+
+#Final Selection for Fancy Model
+```{r}
+modTransformCat=lm(Price~factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(HeatingQC)+factor(KitchenQ)+factor(ExteriorC)+factor(CentralAir)+factor(GarageQ)+factor(Foundation)+factor(GarageC)+factor(BasementHt)+factor(GarageType)+factor(LotConfig)+factor(BasementC)+factor(Heating)+factor(Condition), data=AmesTrain6a)
+summary(modTransformCat)
+MSE=(summary(modTransformCat)$sigma)^2
+step(none,scope=list(upper=modTransformCat),scale=MSE)
+```
+
+```{r}
+modTransformNumeric=lm(Price~LotArea+I(LotArea^2)+YearBuilt+I(YearBuilt^2)+BasementSF+I(BasementSF^2)+GarageCars+I(GarageCars^2)+WoodDeckSF+I(WoodDeckSF^2)+GroundSF+I(GroundSF^2)+FullBath+TotalRooms, data=AmesTrain6a)
+summary(modTransformNumeric)
+MSE=(summary(modTransformNumeric)$sigma)^2
+step(none,scope=list(upper=modTransformNumeric),scale=MSE)
+```
+We chose to narrow down our pool of variables separately by categorical and numerical factors before we combined them. It was easier to analyze the numeric and categorical variables in models together. However, once we narrowed down the categorical and numerical variables seperately, we combined them in this model (modTransformFull) and re-ran stepwise, forward, and backward selection, which is below.
+
+
+
+```{r}
+modTransformFull=lm(Price~LotArea+I(LotArea^2)+YearBuilt+I(YearBuilt^2)+BasementSF+I(BasementSF^2)+GarageCars+I(GarageCars^2)+WoodDeckSF+I(WoodDeckSF^2)+GroundSF+I(GroundSF^2)+FullBath+TotalRooms+factor(HouseStyle)+factor(ExteriorQ)+factor(BasementFin)+factor(KitchenQ)+factor(BasementHt)+factor(Condition), data=AmesTrain6a)
+summary(modTransformFull)
+```
+We made this model by combining the categorical and numerical variables suggested by our separate stepwise selections.
+
+Stepwise selection:
+```{r}
+MSE=(summary(modTransformFull)$sigma)^2
+step(none,scope=list(upper=modTransformFull),scale=MSE)
+```
+
+Forward selection
+```{r}
+MSE=(summary(modTransformFull)$sigma)^2
+none=lm(Price~1,data=AmesTrain6a)
+step(none,scope=list(upper=modTransformFull),scale=MSE, direction = "forward")
+```
+
+Backward selection
+```{r}
+MSE=(summary(modTransformFull)$sigma)^2
+step(modTransformFull,scale=MSE)
+```
+Backward selection
+
+
+
+```{r}
+BackwardMod = lm(Price ~ LotArea + I(LotArea^2) + I(YearBuilt^2) + BasementSF + 
+    GarageCars + I(GarageCars^2) + WoodDeckSF + GroundSF + I(GroundSF^2) + 
+    FullBath + TotalRooms + factor(HouseStyle) + factor(ExteriorQ) + 
+    factor(BasementFin) + factor(KitchenQ) + factor(BasementHt) + 
+    factor(Condition), data=AmesTrain6a)
+summary(BackwardMod)
+```
+
+```{r}
+StepwiseMod = lm(Price ~ factor(ExteriorQ) + I(GroundSF^2) + factor(BasementHt) + 
+    factor(HouseStyle) + factor(Condition) + I(YearBuilt^2) + 
+    BasementSF + LotArea + I(LotArea^2) + factor(KitchenQ) + 
+    I(GarageCars^2) + factor(BasementFin) + FullBath + GroundSF + 
+    TotalRooms + GarageCars + WoodDeckSF, data=AmesTrain6a)
+summary(StepwiseMod)
+```
+
+```{r}
+ForwardMod= lm(Price ~ factor(ExteriorQ) + I(GroundSF^2) + factor(BasementHt) + 
+    factor(HouseStyle) + factor(Condition) + I(YearBuilt^2) + 
+    BasementSF + LotArea + I(LotArea^2) + factor(KitchenQ) + 
+    I(GarageCars^2) + factor(BasementFin) + FullBath + GroundSF + 
+    TotalRooms + GarageCars, data=AmesTrain6a)
+summary(ForwardMod)
+```
+
+The forward selection model has the best parsimony and suggests a 16-variable mod with an r-squared value of .887, an AIC of 40.22, and a Mallow CP of ~40. (This is one fewer variable but a slightly worse (.002) adjusted r-squared than the models suggested by stepwise and backward selection.) We chose the backward selection model because it uses the fewest variables, which is best for parsimony, especially given how many variables we could use. 
+
+### Part 8: Cross-Validation
+#Redo the cross-validation analysis with your test data for your new fancy model.
+
+```{r}
+mean(ForwardMod$residuals)
+sd(ForwardMod$residuals)
+
+mean(modTransformFull$residuals)
+sd(modTransformFull$residuals)
+
+plot(ForwardMod$residuals)
+abline(0,0)
+```
+```{r}
+ShrunkenMod=lm(Price ~ factor(ExteriorQ) + I(GroundSF^2) + factor(BasementHt) + 
+    factor(HouseStyle) + factor(Condition) + I(YearBuilt^2) + 
+    BasementSF + LotArea + I(LotArea^2) + factor(KitchenQ) + 
+    I(GarageCars^2) + factor(BasementFin) + FullBath + GroundSF + 
+    TotalRooms + GarageCars, data=AmesTrain6)
+
+RefitAmes=predict.lm(ShrunkenMod, newdata=AmesTest6)
+
+cor(AmesTest6$Price,RefitAmes)
+crosscorr=cor(AmesTest6$Price,RefitAmes)
+cor(log(AmesTest6$Price),RefitAmes)
+crosscorr=cor(AmesTest6$Price,RefitAmes)
+crosscorr^2
+.8872-crosscorr^2
+```
+#Discuss mean of residuals, std. dev of residuals, cross-validation correlation, and shrinkage
+The chunk beginning at line 312 shows us that having a model with fewer variables (ForwardMod) does not dramatically impact the residual values of either the mean or the standard deviation. The mean residuals of the ForwardMod is very close to zero, indicating that there is normality in the data. The plot of the residuals backs up this assumption, since it doesn't show any fanning pattern or skew. The standard deviation is also small relative to the size of the data. These are all good signs and encourage us to use ForwardMod. ForwardMod is a also a more efficent model than the full mod because it has fewer variables for essentially the same r-squared value (.002 difference). The cross-validation of the model also shows shrinkage of the ForwardMod as a healthy sign, since it shows only a .05 difference between the model we made and the holdout data. This means we did not overfit the model.  
+
+###Part 9: Final Model
+#Final Changes
+We chose not to make any more adjustments to our model, because we think it does a good job balancing the number of variables it uses and predictive ability. This conclusion was supported by normality in the residuals and negative shrinkage. The adjusted r-squared is high and we have relatively good parsimony. 
+
+```{r}
+newpredictiondata= data.frame(ExteriorQ="Gd", BasementHt="Ex", Condition=5, YearBuilt=1995, BasementSF=1150, KitchenQ="TA", GarageCars=2, BasementFin="Unf", TotalRooms=9, GroundSF=2314, FullBath=2, HouseStyle="2Story", WoodDeckSF=274, LotArea=11060)
+predict.lm(ForwardMod, newpredictiondata, interval="prediction", level=.95)
+```
+
+With a 2 story house from Ames, Iowa, with a good exterior quality, excellent basement height, average overall condition, built in 1995, basement square footage of 1150 ft, average kitchen quality, space for 2 cars in the garage, unfinished basement, 9 total rooms, 2314 ft in living area square feet, 2 full baths, 274 sq ft of wood deck, and 11060 sq ft lot area, we expect the price to be $234,182. We are 95% confident that the price will fall between $178,715 and $289,649. 
+
